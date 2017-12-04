@@ -29,10 +29,10 @@ au_normal:
 	beq 	$a2, '+', add_normal
 	beq	$a2, '-', sub_normal
 	beq	$a2, '*', mul_normal
+	beq	$a2, '/', div_normal
 	# Check for multiplication and division
 add_normal:
 	add 	$s0, $a0, $a1
-
 	move	$v0, $s0 
 	j 	alu_normal_end
 sub_normal:
@@ -46,6 +46,9 @@ mul_normal:
 	mflo	$v0	
 	j 	alu_normal_end
 div_normal:
+	div 	$a0, $a1
+	mfhi	$v1
+	mflo	$v0
 	j	alu_normal_end
 alu_normal_end:
 	# Caller RTE restore (TBD)

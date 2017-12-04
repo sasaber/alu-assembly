@@ -31,6 +31,7 @@ au_logical:
 	beq 	$a2, '+', add_logical
 	beq	$a2, '-', sub_logical
 	beq 	$a2, '*', mul_signed_logical
+	beq	$a2, '/', div_signed_logical
 	j 	au_logical_end
 add_logical:
 
@@ -43,8 +44,10 @@ sub_logical:
 	jal	add_sub_logical
 	j	au_logical_end
 mul_signed_logical:
-	
 	jal	mul_signed
+	j	au_logical_end
+div_signed_logical:
+	jal	div_signed
 au_logical_end:
 	lw	$fp, 16($sp)
 	lw	$ra, 12($sp)
@@ -144,9 +147,11 @@ while_loop:
 	beq	$s0, 0x20, mul_unsigned_end	# if I == 32
 	j	while_loop			# else
 mul_unsigned_end:
-
+	#print_reg_int($s2)
 	move 	$v0, $s2
 	move 	$v1, $s1
+	#mtlo	$v0
+	#mthi	$v1
 	
 	lw	$fp, 40($sp)
 	lw	$ra, 36($sp)
@@ -303,3 +308,105 @@ twos_complement_64bit_end:
 	
 	jr	$ra
 	
+div_unsigned:
+	# s0 s1 a0, a2, 
+	addi	$sp, $sp, -28
+	sw	$fp, 28($sp)
+	sw	$ra, 24($sp)
+	sw	$a0, 20($sp)
+	sw	$a2, 16($sp)
+	sw	$s0, 12($sp)
+	sw	$s1,  8($sp)
+	addi	$fp, $sp, 28
+	
+	li	$t0, 0x0	# t0 = I = 0
+	li	$t1, 0x0	# t1 = R = 0
+	la	$s0, 0($a0)	# original values
+	la	$s1, 0($a1)
+div_while_loop:
+	li	$t3, 0x1	#t3 = 1
+	sllv	$t1, $t1, $t3	# r << 1
+	li 	$t3, 0x1f	# 31
+	extract_nth_bit($t4, $a0, $t3)	# t4 = Q[31]
+	insert_to_nth_bit($t1, $zero, $t4, $t5)
+	li	$t3, 0x1
+	sllv	$a0, $a0, $t3	# Q << 1
+	la	$t6, 0($a0)
+	la	$a0, 0($t1)	# move R tp a0
+	li	$a2, '-'
+	jal	au_logical
+	la	$a0, 0($t6)
+	la	$t5, 0($v0)	# S = R - D
+	bge	$t5, $zero, intermediate_label
+div_while_loop_continued:	
+	addi	$t0, $t0, 0x1
+	addi	$t3, $zero, 32
+	beq	$t0, $t3, div_unsigned_end
+	j	div_while_loop
+intermediate_label:
+	move	$t1, $t5	# R = S
+	addi	$t3, $zero, 1 	# t3 = 1
+	insert_to_nth_bit($a0, $zero, $t3, $t6)	# Q[0] = 1
+	j	div_while_loop_continued
+div_unsigned_end:
+	move	$v0, $a0	#quotient
+	move	$v1, $t1	#remainder
+	
+	lw	$fp, 28($sp)
+	lw	$ra, 24($sp)
+	lw	$a0, 20($sp)
+	lw	$a2, 16($sp)
+	lw	$s0, 12($sp)
+	lw	$s1,  8($sp)
+	addi	$sp, $sp, 28
+	jr	$ra
+
+
+# SHOULD WE USE TWOS COMP 64 BIT like in mul signed
+div_signed:
+
+	# a0 a1 
+	addi	$sp, $sp, -20
+	sw	$fp, 20($sp)
+	sw	$ra, 16($sp)
+	sw	$a0, 12($sp)
+	sw	$a1,  8($sp)
+	addi	$fp, $sp, 20
+	
+	# begin
+	la	$t0, 0($a0)	# a0 original
+	la	$t1, 0($a1)	# a1 original
+	jal	twos_complement_if_neg	# for a0
+	la 	$t2, 0($v0)	# new N1
+	la	$a0, 0($t1)
+	jal	twos_complement_if_neg	# for a1
+	la 	$a1, 0($v0)	# new N2
+	la	$a0, 0($t2)	
+	jal	div_unsigned
+	la	$t2, 0($v0)	# Q
+	la	$t3, 0($v1)	# R
+	li	$t4, 0x1f
+	extract_nth_bit($t5, $t0, $t4)	# a0[31]
+	extract_nth_bit($t6, $t1, $t4)	# a1[31]
+	xor	$t7, $t5, $t6	# S = a0[31] xor a1[31]
+	la 	$a0, 0($t2)
+	bne	$t7, 1, find_sign_of_R
+	jal	twos_complement
+	la	$t2, 0($v0)	# 2's complement of Q
+find_sign_of_R:
+	la	$t7, 0($t5)	# s = a0[31]
+	bne	$t7, 1, div_signed_end
+	la	$a0, 0($t3)
+	jal	twos_complement
+	la	$t3, 0($v0)	# 2's complement of R
+div_signed_end:
+	move	$v0, $t2
+	move	$v1, $t3
+	
+	lw	$fp, 20($sp)
+	lw	$ra, 16($sp)
+	lw	$a0, 12($sp)
+	lw	$a1,  8($sp)
+	addi	$sp, $sp, 20
+	
+	jr	$ra
